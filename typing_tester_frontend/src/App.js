@@ -22,6 +22,10 @@ const COLORS = {
   background: '#fff',
 };
 
+/**
+ * Typing Speed Tester main React component.
+ * Records WPM, accuracy, and tracks & displays high score (highest WPM) using localStorage.
+ */
 // PUBLIC_INTERFACE
 function App() {
   // --- State ---
@@ -41,6 +45,13 @@ function App() {
   const [typedWords, setTypedWords] = useState([]);
   const [wpm, setWpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
+
+  // High Score (persisted)
+  const [highScore, setHighScore] = useState(() => {
+    // Retrieve from localStorage, or zero if not present
+    const saved = window.localStorage.getItem('highScore');
+    return saved !== null ? parseInt(saved, 10) : 0;
+  });
 
   const inputRef = useRef();
 
@@ -163,6 +174,17 @@ function App() {
     ]);
     setInput('');
     setCharIdx(0);
+
+    // --- High Score Calculation (after state settles) ---
+    // Need to wait until WPM is updated, so use a short timeout to defer evaluation to next tick
+    setTimeout(() => {
+      const latestWpm = wpm; // WPM at test end (should be set via effect)
+      if (latestWpm > highScore) {
+        // Save to localStorage and update state
+        window.localStorage.setItem('highScore', String(latestWpm));
+        setHighScore(latestWpm);
+      }
+    }, 0);
   }
 
   // --- Reset Functionality ---
@@ -184,6 +206,9 @@ function App() {
     setTypedWords([]);
     setWpm(0);
     setAccuracy(100);
+    // Reset high score from localStorage (handles manual reset)
+    const saved = window.localStorage.getItem('highScore');
+    setHighScore(saved !== null ? parseInt(saved, 10) : 0);
     setTimeout(() => {
       if (inputRef.current) inputRef.current.focus();
     }, 50);
@@ -280,6 +305,7 @@ function App() {
           <h2 style={{color:COLORS.primary,marginTop:0,marginBottom:24, fontWeight: '700', letterSpacing: '0.05em'}}>Test Complete</h2>
           <div className="summary-metrics" style={{marginBottom:24}}>
             <div style={{marginBottom:12}}>WPM: <b>{wpm}</b></div>
+            <div style={{marginBottom:10, color: COLORS.accent, fontWeight:500}}>🏆 High Score: {highScore} WPM</div>
             <div style={{marginBottom:12}}>Accuracy: <b>{accuracy}%</b></div>
             <div>Time: <b>{timeSec}s</b></div>
           </div>
@@ -370,6 +396,9 @@ function App() {
         <h1 style={{
           color:COLORS.primary, fontWeight:900, letterSpacing:'0.07em', margin:'0 0 14px 0', fontSize:36
         }}>Typing Speed Tester</h1>
+        <div style={{ fontSize:17, color: COLORS.accent, fontWeight:600, marginBottom: 7 }}>
+          🏆 High Score: {highScore} WPM
+        </div>
         <div style={{
           margin:'0 0 2px 0', color:'#888', fontWeight:400, letterSpacing:'0.02em',fontSize:16
         }}>How fast can you type?</div>
