@@ -13,17 +13,94 @@ import {
   generateInviteLink,
   getInviterProfile
 } from "./supabaseClient";
-// --- Configuration ---
-const WORD_LIST = [
-  'code', 'react', 'random', 'highlight', 'keyboard', 'app', 'speed',
-  'accuracy', 'measure', 'display', 'summary', 'reset', 'logic', 'modern',
-  'minimal', 'theme', 'palette', 'feature', 'test', 'typing', 'letter',
-  'track', 'timer', 'dialog', 'simple', 'frontend', 'backend', 'project',
-  'component', 'container'
+/**
+ * --- Kavia AI Fact Pool ---
+ * A large collection of short sentences and facts to serve as fresh, varied
+ * typing content. Each new test picks a random, non-repeated set per attempt.
+ */
+const KAVIA_FACTS = [
+  "Kavia AI automates software development using advanced generative models.",
+  "The Kavia platform translates natural language into functional source code.",
+  "With Kavia AI, teams can deliver projects faster and with fewer bugs.",
+  "Kavia's AI solutions reduce manual coding effort for product teams.",
+  "Kavia supports multiple programming languages and frameworks.",
+  "Kavia AI keeps software up to date with rapid code refactoring.",
+  "Kavia’s platform explains every code change for full transparency.",
+  "The Kavia Engine embraces continuous integration and delivery.",
+  "Kavia helps onboard new developers faster with live documentation.",
+  "Kavia AI analyzes code quality and test coverage automatically.",
+  "Using Kavia, companies achieve better productivity and consistency.",
+  "Kavia’s conversational interface makes complex automation accessible.",
+  "Kavia AI learns from code patterns and user feedback.",
+  "Kavia integrates with GitHub for seamless source control.",
+  "Kavia’s test automation boosts software reliability.",
+  "Kavia enables feature shipping at a fraction of previous cost.",
+  "Kavia AI is privately hosted for maximum data security.",
+  "Kavia excels at generating UI, backend, and API code automatically.",
+  "Kavia’s mission is to make development creative and fast.",
+  "Kavia AI cuts the time to deliver MVPs from weeks to hours.",
+  "Kavia suggests architectural improvements to reduce technical debt.",
+  "Kavia’s models are continuously trained on new codebases.",
+  "Kavia offers intelligent bug fixing and regression tests.",
+  "Kavia gives instant feedback on code changes before deployment.",
+  "Kavia supports full-stack web, mobile, and cloud applications.",
+  "Kavia’s brand color is a refreshing blue called Kavia Blue.",
+  "Kavia understands dependencies between components and services.",
+  "Kavia's documentation generator keeps project docs always up-to-date.",
+  "Kavia’s interface integrates code suggestions and review together.",
+  "Kavia helps teams comply with security and privacy requirements.",
+  "Kavia offers visual QA and design system enforcement automatically.",
+  "Kavia can modernize legacy apps with minimal disruption.",
+  "Kavia makes it easy to analyze, refactor, and enhance codebases.",
+  "Kavia’s AI can interpret complex user stories and acceptance criteria.",
+  "Kavia generates functional tests to verify application behavior.",
+  "Kavia’s platform can be used by both coders and business analysts.",
+  "Kavia makes large-scale code migrations possible with one prompt.",
+  "With Kavia AI, code is always explainable and reproducible.",
+  "Kavia offers both cloud and on-premise deployment options.",
+  "Kavia is trusted by technology leaders worldwide.",
+  "Kavia's benefit is freeing engineers to focus on creativity.",
+  "The Kavia developer console supports real-time code previews.",
+  "Kavia’s insight engine recommends optimization opportunities.",
+  "Kavia identifies unreachable or dead code and suggests actions.",
+  "You can generate API docs instantly via Kavia.",
+  "Kavia fosters better collaboration between teams and stakeholders.",
+  "Kavia was founded by a team passionate about developer experience.",
+  "Kavia helps reduce context switching and repetitive work.",
+  "Kavia AI empowers product and engineering teams alike.",
+  "Kavia’s AI audit can flag risky coding patterns early.",
+  "Kavia reduces bottlenecks by automating routine engineering tasks.",
+  "Kavia supports instant rollbacks with explainable change history.",
+  "Kavia detects code smells and anti-patterns as you type.",
+  "Kavia’s natural language interface is easy for everyone.",
+  "Kavia can scaffold new projects with consistent architecture.",
+  "Kavia tracks the evolution of your codebase over time.",
+  "Kavia’s assistant can suggest code reviews and improvements.",
+  "Kavia handles integration with modern API ecosystems.",
+  "Kavia’s release management tools automate deployment steps.",
+  "Kavia AI: Helping tomorrow’s software come alive, today.",
+  "Kavia can be integrated with Slack, Jira, and popular developer tools.",
+  "Kavia offers a demo sandbox for trying out AI-powered coding.",
+  "Kavia’s output always includes in-code documentation and tips.",
+  "Kavia adapts to project conventions and team style guides.",
+  "Kavia makes setting up CI/CD pipelines fast and easy.",
+  "Kavia is built to scale with startups and large enterprises alike.",
+  "Kavia’s vision: Code creation, explained, accelerated, evolved."
 ];
+// Each sample is 7-14 words so even short typing tests will be varied and on-brand.
 
-// Set test constraints
-const NUM_WORDS = 30; // Number of words per test
+const NUM_FACTS_PER_TEST = 10; // Number of sentences (samples) per test
+
+// -- Helper function to draw a new shallow-random, non-repeating sample subset --
+function pickRandomSamples(array, count) {
+  // Fisher-Yates shuffle and slice
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.slice(0, count);
+}
 
 const COLORS = {
   primary: '#71def4',
@@ -267,9 +344,10 @@ function App() {
   // --- Reset Functionality ---
   // PUBLIC_INTERFACE
   function resetTest() {
-    // Shuffle and pick NUM_WORDS words
-    const shuffled = [...WORD_LIST].sort(() => 0.5 - Math.random());
-    setWordList(shuffled.slice(0, NUM_WORDS));
+    // Generate a fresh typing test: randomly chosen Kavia facts, always new, no repeats per test.
+    const newSamples = pickRandomSamples(KAVIA_FACTS, NUM_FACTS_PER_TEST)
+      .flatMap(sentence => sentence.split(' '));
+    setWordList(newSamples);
     setInput('');
     setActiveWordIdx(0);
     setCharIdx(0);
@@ -643,7 +721,7 @@ function App() {
         <div style={indicatorStyles}>
           <span><span style={metricLabel}>WPM</span>{wpm}</span>
           <span><span style={metricLabel}>Accuracy</span>{accuracy}%</span>
-          <span><span style={metricLabel}>Words</span>{typedWords.length}/{NUM_WORDS}</span>
+          <span><span style={metricLabel}>Words</span>{typedWords.length}/{wordList.length}</span>
         </div>
         <button
           className="reset-btn"
