@@ -1,0 +1,121 @@
+/* --- Typography & Reset --- */
+body, html {
+  background: #fff;
+  margin: 0;
+  padding: 0;
+  font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+
+:root {
+  --primary: #71def4;
+  --accent: #f4a357;
+  --error: #f96262;
+  --correct: #64c672;
+  --text: #282c34;
+  --background: #fff;
+}
+
+* { box-sizing: border-box; }
+
+.App {
+  background: var(--background);
+}
+
+.words-row {
+  min-height: 44px;
+  font-size: 18px;
+  line-height: 1.7;
+  padding-bottom: 2px;
+  letter-spacing: 1.2px;
+}
+
+.word {
+  display: inline-block;
+  margin: 0 6px;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-family: inherit;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+/* Highlight correct/incorrect (for overriding inline) */
+.correct {
+  color: var(--correct);
+  font-weight: bold;
+}
+.incorrect {
+  color: var(--error);
+  text-decoration: underline;
+}
+.active {
+  background: rgba(113,222,244,0.08);
+  outline: 1.5px solid var(--primary);
+}
+
+.blinking-cursor {
+  display: inline-block;
+  width: 9px;
+  color: var(--primary);
+  animation: cursor-blink 1s steps(2, start) infinite;
+  font-weight: bold;
+  font-size: 21px;
+  vertical-align: middle;
+}
+@keyframes cursor-blink {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Reset button */
+.reset-btn {
+  outline: none !important;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  padding: 13px 36px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  margin-top: 18px;
+  margin-bottom: 0;
+  box-shadow: 0 2px 8px 0 rgba(113,222,244,0.08);
+  cursor: pointer;
+  transition: background 0.17s, transform 0.12s;
+}
+.reset-btn:active {
+  background: #5ccdd8;
+  transform: scale(0.98);
+}
+.reset-btn:hover, .reset-btn:focus-visible {
+  background: #5ccdd8;
+}
+
+/* Summary dialog (modal) */
+.summary-dialog {
+  animation: fadein 0.24s cubic-bezier(0.72,0,0.24,1);
+}
+@keyframes fadein {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.summary-dialog .summary-metrics > div {
+  font-size: 18px;
+  color: var(--text);
+  margin: 0 0 6px 0;
+}
+
+/* Responsive for mobile */
+@media (max-width: 720px) {
+  .card {
+    padding: 22px 5vw 24px 5vw !important;
+    font-size: 15px;
+  }
+  .summary-dialog > div {
+    min-width: 90vw !important;
+    max-width: 95vw !important;
+    padding: 18px 7vw 18px 7vw !important;
+  }
+}
