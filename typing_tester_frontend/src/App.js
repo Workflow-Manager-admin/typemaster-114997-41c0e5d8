@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './App.css';
+import errorBeep from './error-beep.mp3';
 
 import {
   supabase,
@@ -155,17 +156,17 @@ function App() {
   });
 
   const inputRef = useRef();
+  const errorAudioRef = useRef(null);
+  const [errorFlash, setErrorFlash] = useState(false);
 
   // --- On mount: setup Supabase listeners for auth (also for invite link check) ---
   useEffect(() => {
-    // Parse out invite param if available when app mounts
     const url = new URL(window.location.href);
     const invite = url.searchParams.get("invite");
     if (invite && typeof invite === "string") {
       getInviterProfile(invite).then(setInviter).catch(() => {});
     }
 
-    // Check current session on init
     supabase.auth.getUser().then(({ data: { user } }) => {
       setSupabaseUser(user || null);
     });
@@ -225,7 +226,7 @@ function App() {
     setAccuracy(totalKey > 0 ? Math.round((correctChars / totalKey) * 100) : 100);
   }, [elapsed, typedWords, correctChars, incorrectChars]);
 
-  // --- Start typing on first key ---
+  // --- Start typing on first key + error feedback ---
   const handleInput = (e) => {
     if (finished) return;
     if (!started) {
@@ -238,7 +239,6 @@ function App() {
     // Disallow spaces and linebreaks outside end of word
     if (e.target.value.endsWith(' ') || e.target.value.endsWith('\n')) {
       const currWord = wordList[activeWordIdx];
-      // Commit this word's result
       setTypedWords((tw) => [
         ...tw,
         {
@@ -257,7 +257,32 @@ function App() {
       setCharIdx(0);
       return;
     }
-    // Track char index for highlighting
+
+    // --- Error detect/sound/animation
+    const currWord = wordList[activeWordIdx] || '';
+    const newValue = e.target.value;
+    let isError = false;
+    if (newValue.length > 0) {
+      if (currWord && currWord.length >= newValue.length) {
+        if (
+          newValue[newValue.length - 1] &&
+          currWord[newValue.length - 1] !== newValue[newValue.length - 1]
+        ) {
+          isError = true;
+        }
+      }
+      if (currWord && newValue.length > currWord.length) {
+        isError = true;
+      }
+    }
+    if (isError) {
+      if (errorAudioRef.current) {
+        errorAudioRef.current.currentTime = 0;
+        errorAudioRef.current.play();
+      }
+      setErrorFlash(true);
+      setTimeout(() => setErrorFlash(false), 110);
+    }
     setCharIdx(e.target.value.length);
     setInput(e.target.value);
   };
@@ -267,7 +292,7 @@ function App() {
     const arr = [];
     for (let i = 0; i < Math.max(word.length, userInput.length); i++) {
       if (userInput[i] == null) {
-        arr.push(null); // untyped
+        arr.push(null);
       } else if (userInput[i] === word[i]) {
         arr.push('correct');
       } else {
@@ -318,14 +343,12 @@ function App() {
     setInput('');
     setCharIdx(0);
 
-    // --- High Score Calculation (after state settles) ---
     setTimeout(async () => {
-      const latestWpm = wpm; // WPM at test end (should be set via effect)
+      const latestWpm = wpm;
       if (latestWpm > highScore) {
         window.localStorage.setItem('highScore', String(latestWpm));
         setHighScore(latestWpm);
       }
-      // Supabase high score & score persistence
       if (supabaseUser && userProfile && latestWpm > (supabaseHighScore || 0)) {
         try {
           await updateUserHighScore(latestWpm);
@@ -335,7 +358,6 @@ function App() {
       if (supabaseUser && userProfile) {
         try { await saveScore(latestWpm); } catch (_e) {}
       }
-      // Update leaderboard after score save
       setLeaderboardLoading(true);
       fetchLeaderboard(10).then((d) => setLeaderboard(d || [])).catch(() => setLeaderboard([])).finally(() => setLeaderboardLoading(false));
     }, 0);
@@ -344,7 +366,6 @@ function App() {
   // --- Reset Functionality ---
   // PUBLIC_INTERFACE
   function resetTest() {
-    // Generate a fresh typing test: randomly chosen Kavia facts, always new, no repeats per test.
     const newSamples = pickRandomSamples(KAVIA_FACTS, NUM_FACTS_PER_TEST)
       .flatMap(sentence => sentence.split(' '));
     setWordList(newSamples);
@@ -361,7 +382,6 @@ function App() {
     setTypedWords([]);
     setWpm(0);
     setAccuracy(100);
-    // Reset high score from localStorage (handles manual reset)
     const saved = window.localStorage.getItem('highScore');
     setHighScore(saved !== null ? parseInt(saved, 10) : 0);
     setTimeout(() => {
@@ -369,48 +389,53 @@ function App() {
     }, 50);
   }
 
-  // --- UI helpers ---
+  // --- UI helpers: Playful, Animated, Colorful
   function renderWord(word, idx) {
     const isActive = idx === activeWordIdx;
     let rendered = [];
     if (isActive && !finished) {
-      // Highlight each letter according to current input
       const charResults = computeCharResults(word, input);
       rendered = word.split('').map((char, i) => {
         let style = {};
         if (charResults[i] === 'correct') {
-          style = { color: COLORS.correct, fontWeight: 'bold', background: 'rgba(113,222,244,0.08)' };
+          style = { color: COLORS.correct, fontWeight: 'bold', background: 'rgba(113,222,244,0.08)', transition: 'color 0.13s, background 0.13s'};
         } else if (charResults[i] === 'incorrect') {
-          style = { color: COLORS.error, textDecoration: 'underline', background: 'rgba(249,98,98,0.10)' };
+          style = {
+            color: COLORS.error,
+            textDecoration: 'underline',
+            background: 'rgba(249,98,98,0.12)',
+            animation: errorFlash ? 'flashError 0.11s' : undefined,
+            borderRadius: '4px',
+            transition: 'color 0.11s, background 0.13s'
+          };
         }
         return <span key={i} style={style}>{char}</span>;
       });
-      // Show any extra letters typed (overrun)
       if (input.length > word.length) {
         for (let j = word.length; j < input.length; j++) {
           rendered.push(
             <span key={'extra'+j} style={{
               color: COLORS.error,
               opacity: 0.5,
-              fontStyle: 'italic'
+              fontStyle: 'italic',
+              background: errorFlash ? 'rgba(249,98,98,0.15)' : 'none',
+              padding: '0 2px',
+              animation: errorFlash ? 'pulseShake 0.13s' : undefined
             }}>{input[j]}</span>
           );
         }
       }
-      // Add "cursor"
       rendered.push(<span key="cursor" className="blinking-cursor">|</span>);
     } else {
-      // For completed words, show correct/incorrect
       if (typedWords[idx]) {
         rendered = word.split('').map((char, i) => {
           const res = typedWords[idx].charResults?.[i];
           let style = {};
-          if (res === 'correct') style = { color: COLORS.correct, fontWeight: 'bold' };
-          else if (res === 'incorrect') style = { color: COLORS.error, textDecoration: 'underline' };
+          if (res === 'correct') style = { color: COLORS.correct, fontWeight: 'bold'};
+          else if (res === 'incorrect') style = { color: COLORS.error, textDecoration: 'underline'};
           else style = {};
           return <span key={i} style={style}>{char}</span>;
         });
-        // Show typo overrun if present
         const typed = typedWords[idx].typed || '';
         if (typed.length > word.length) {
           for (let k = word.length; k < typed.length; k++) {
@@ -420,22 +445,26 @@ function App() {
           }
         }
       } else {
-        // Upcoming words
         rendered = word.split('').map((char, i) => <span key={i}>{char}</span>);
       }
     }
     return (
       <span
-        className="word"
+        className={'word'+(isActive?' activeWordAni':'')}
         style={{
           margin: '0 7px',
           padding: '2px 4px',
           borderRadius: 4,
-          background: isActive ? 'rgba(113,222,244,.14)' : 'none',
-          fontSize: isActive ? 20 : 18,
-          fontWeight: isActive ? 500 : 400,
-          border: isActive ? `1.5px solid ${COLORS.primary}` : 'none',
-          boxShadow: isActive ? `0px 1.5px 0px 0px ${COLORS.primary}08` : 'none'
+          background: isActive ? (errorFlash?'rgba(249,98,98,.08)':'rgba(113,222,244,.14)') : 'none',
+          fontSize: isActive ? 22 : 18,
+          fontWeight: isActive ? 550 : 400,
+          border: isActive ? `1.7px solid ${COLORS.primary}` : 'none',
+          boxShadow: isActive
+            ? (errorFlash
+              ? `0 2px 8px 0 rgba(249,98,98,0.18)`
+              : `0px 1.5px 0px 0px ${COLORS.primary}10`)
+            : 'none',
+          transition: 'background 0.17s, box-shadow 0.16s, border 0.14s, font-size 0.10s'
         }}>{rendered}</span>
     );
   }
@@ -443,22 +472,30 @@ function App() {
   // --- Render Summary Dialog ---
   function SummaryDialog() {
     const timeSec = Math.round(elapsed / 1000);
-    // Show invite prompt after each test if logged in
     return (
       <div className="summary-dialog" style={{
         position: 'fixed', left:0, top:0, width:'100%', height:'100%',
         background: 'rgba(255,255,255,0.8)', zIndex: 10,
-        display:'flex', alignItems:'center', justifyContent:'center'
+        display:'flex', alignItems:'center', justifyContent:'center',
+        animation: 'fadein 0.27s cubic-bezier(0.72,0,0.24,1)'
       }}>
         <div style={{
-          padding:32,
+          padding:42,
           background:'#fff',
-          borderRadius:14,
-          boxShadow: '0 6px 32px 0 rgba(0,0,0,0.08), 0 1.5px 8px 0 rgba(113,222,244,0.04)',
+          borderRadius:22,
+          boxShadow: '0 6px 32px 0 rgba(0,0,0,0.09), 0 3px 12px 0 rgba(113,222,244,0.08)',
           minWidth:320,
-          maxWidth:410
+          maxWidth:410,
+          textAlign:'center',
+          animation: 'bounceIn 0.48s cubic-bezier(.55,1.5,.45,1)'
         }}>
-          <h2 style={{color:COLORS.primary,marginTop:0,marginBottom:24, fontWeight: '700', letterSpacing: '0.05em'}}>Test Complete</h2>
+          <h2 style={{
+            color:COLORS.primary,
+            marginTop:0,
+            marginBottom:24,
+            fontWeight: '700',
+            letterSpacing: '0.05em'
+          }}>Test Complete</h2>
           <div className="summary-metrics" style={{marginBottom:24}}>
             <div style={{marginBottom:12}}>WPM: <b>{wpm}</b></div>
             <div style={{marginBottom:10, color: COLORS.accent, fontWeight:500}}>
@@ -475,13 +512,20 @@ function App() {
               <input type="text" value={inviteLink} onFocus={e=>e.target.select()} readOnly style={{width:"99%",fontSize:12,margin:"5px auto 5px auto"}} />
               <button
                 className="primary-btn"
-                style={{ ...resetBtnStyles, fontSize:13, margin: '4px 0 0 0', padding: "7px 2vw", borderRadius:6 }}
+                style={{ fontSize:13, margin: '4px 0 0 0', padding: "7px 2vw", borderRadius:6 }}
                 onClick={()=>{
                   navigator.clipboard.writeText(inviteLink);}}
               >Copy Link</button>
             </div>
           )}
-          <button className="reset-btn" style={resetBtnStyles} onClick={resetTest}>New Test</button>
+          <button className="reset-btn"
+            style={{
+              background: 'linear-gradient(110deg,#71def4 66%,#f4a357 133%)',
+              color:'#fff', border: 'none', fontWeight:600,
+              fontSize:18, letterSpacing:'0.13em', padding:'15px 48px', borderRadius:10, marginTop:16, cursor:'pointer'
+            }}
+            onClick={resetTest}
+          >New Test</button>
         </div>
       </div>
     );
@@ -503,62 +547,69 @@ function App() {
 
   const cardStyles = {
     background:'#fff',
-    borderRadius: 14,
-    padding: '36px 40px 32px 40px',
-    boxShadow: '0 2px 12px 0 rgba(113,222,244,0.10), 0 1.5px 8px 0 rgba(244,163,87,0.07)',
-    maxWidth: 680,
-    width: '95%',
-    marginTop:60,
-    marginBottom:30,
+    borderRadius: 18,
+    padding: '42px 52px 36px 52px',
+    boxShadow: '0 10px 40px 0 rgba(113,222,244,0.090), 0 2px 8px 0 rgba(244,163,87,0.08)',
+    maxWidth: 740,
+    width: '98%',
+    marginTop:70,
+    marginBottom:36,
     display:'flex',
     flexDirection:'column',
     alignItems:'center',
-    gap:20
+    gap:24
   };
 
   const indicatorStyles = {
     display:'flex',
     flexDirection:'row',
     justifyContent:'center',
-    gap:22,
+    gap:28,
     margin:'18px 0 0 0'
   };
 
   const metricLabel = {
     color: COLORS.accent,
-    fontWeight: 600,
-    fontSize:14,
+    fontWeight: 700,
+    fontSize:18,
     marginRight:6
   };
 
   const inputStyles = {
-    fontSize:18,
-    lineHeight:'26px',
-    letterSpacing:'1.5px',
-    minWidth:120,
+    fontSize:28,
+    lineHeight:'34px',
+    letterSpacing:'1.3px',
+    minWidth:220,
     outline:'none',
-    padding:'9px 14px',
-    marginTop:12,
-    border:`1.5px solid ${COLORS.primary}`,
-    borderRadius:8,
-    boxShadow:'0 1.5px 6px 0 rgba(113,222,244,0.05)',
+    padding:'17px 22px',
+    marginTop:8,
+    marginBottom:0,
+    border:`2.7px solid ${errorFlash ? COLORS.error : COLORS.primary}`,
+    borderRadius:13,
+    boxShadow: errorFlash
+      ? '0 0 0 6px rgba(249,98,98,0.10),0 2px 18px 0 rgba(244,163,87,0.04)'
+      : '0 2px 18px 0 rgba(113,222,244,0.07)',
     color:COLORS.text,
-    background:'#f8f9fa'
+    background: errorFlash ? '#f9eff1' : '#f8fafd',
+    textAlign: 'center',
+    fontWeight: 600,
+    width: '340px',
+    transition: 'box-shadow 0.15s, border 0.18s, background 0.15s'
   };
 
   const resetBtnStyles = {
-    background: COLORS.primary,
+    background: 'linear-gradient(96deg,#71def4 55%,#f4a357 115%)',
     color:'#fff',
     border:'none',
-    fontWeight:600,
-    fontSize:16,
-    letterSpacing:'0.09em',
-    padding:'13px 36px',
-    borderRadius:8,
-    marginTop:18,
+    fontWeight:700,
+    fontSize:17,
+    letterSpacing:'0.12em',
+    padding:'17px 40px',
+    borderRadius:10,
+    marginTop:14,
     cursor:'pointer',
-    boxShadow: '0 2px 8px 0 rgba(113,222,244,0.08)',
-    transition:'background 0.18s, transform 0.13s'
+    boxShadow: '0 4px 18px 0 rgba(113,222,244,0.13)',
+    transition:'background 0.16s, transform 0.19s'
   };
 
   // --- Auth UI ---
@@ -636,9 +687,17 @@ function App() {
   return (
     <div style={containerStyles}>
       {showAuthForm && <AuthForm />}
-      <main style={cardStyles}>
+      <main style={cardStyles} aria-label="Typing speed test main card">
         <h1 style={{
-          color:COLORS.primary, fontWeight:900, letterSpacing:'0.07em', margin:'0 0 14px 0', fontSize:36
+          color:COLORS.primary,
+          background: 'linear-gradient(90deg,#71def4, #f4a357 38%, #f9626221 100%)',
+          WebkitBackgroundClip:'text',
+          WebkitTextFillColor: 'transparent',
+          fontWeight:900,
+          letterSpacing:'0.07em',
+          margin:'0 0 14px 0',
+          fontSize:40,
+          filter: 'drop-shadow(0 5px 8px rgba(113,222,244,0.07))'
         }}>Typing Speed Tester</h1>
         {/* --- Supabase Auth/Profile -- */}
         <div style={{display:'flex',width:'100%',flexDirection:'row',justifyContent:'flex-end',marginBottom:-8}}>
@@ -677,51 +736,85 @@ function App() {
             <span style={{fontWeight:400,fontSize:14,marginLeft:7}}>🏆 High Score: {inviter.high_score} WPM</span>
           </div>
         )}
-        <div style={{ fontSize:17, color: COLORS.accent, fontWeight:600, marginBottom: 7 }}>
+        <div style={{
+          fontSize:18,
+          color: COLORS.accent,
+          fontWeight:700,
+          marginBottom: 8,
+          textShadow: '0 1.5px 10px rgba(244,163,87,0.09)'
+        }}>
           🏆 High Score: {supabaseHighScore != null && supabaseHighScore > highScore
             ? supabaseHighScore : highScore
           } WPM
         </div>
         <div style={{
-          margin:'0 0 2px 0', color:'#888', fontWeight:400, letterSpacing:'0.02em',fontSize:16
+          margin:'0 0 2px 0', color:'#888', fontWeight:400, letterSpacing:'0.02em',fontSize:17
         }}>How fast can you type?</div>
-        <div className="words-row" tabIndex={-1}
+        <div
+          className={errorFlash ? "words-row error-flash" : "words-row"}
+          tabIndex={-1}
+          aria-label="Current typing words"
           style={{
-            padding:'18px 0', minHeight:40, marginBottom:14, display: 'flex',
+            padding:'26px 0', minHeight:48, marginBottom:20, display: 'flex',
             flexWrap:'wrap', justifyContent:'center',
-            borderBottom:`1px solid #e9ecef`, userSelect: 'none'
+            borderBottom:`1px solid #e9ecef`, userSelect: 'none',
+            background: errorFlash
+              ? 'linear-gradient(90deg,#fff 60%,#f9626218 100%)'
+              : 'rgba(113,222,244,0.02)',
+            transition: 'background 0.15s',
+            animation: errorFlash ? 'pulseShake 0.20s' : undefined
           }}>
           {/* --- Word display --- */}
           {wordList.map((w, i) => (
-            <span key={i}>
+            <span key={i} style={{display:'inline-block'}}>
               {renderWord(w, i)}
             </span>
           ))}
         </div>
-        <input
-          ref={inputRef}
-          spellCheck={false}
-          autoCorrect="off"
-          autoFocus
-          disabled={finished}
-          type="text"
-          value={input}
-          onChange={handleInput}
-          style={inputStyles}
-          placeholder={started ? "" : "Start typing here..."}
-          onKeyDown={e => {
-            if (e.key === "Enter" && started && !finished) {
-              // Allow Enter as space if not finished
-              handleInput({target:{value: input + " "}})
-              e.preventDefault();
-            }
+        <div
+          style={{
+            display:'flex',
+            flexDirection:'column',
+            alignItems:'center',
+            justifyContent:'center',
+            width: '100%',
+            minHeight: '88px', // input + indicators
+            margin: '0 0 4px 0'
           }}
-          aria-label="Typing test input"
-        />
-        <div style={indicatorStyles}>
-          <span><span style={metricLabel}>WPM</span>{wpm}</span>
-          <span><span style={metricLabel}>Accuracy</span>{accuracy}%</span>
-          <span><span style={metricLabel}>Words</span>{typedWords.length}/{wordList.length}</span>
+        >
+          <input
+            ref={inputRef}
+            spellCheck={false}
+            autoCorrect="off"
+            autoFocus
+            disabled={finished}
+            type="text"
+            value={input}
+            onChange={handleInput}
+            style={inputStyles}
+            placeholder={started ? "" : "Start typing here..."}
+            onKeyDown={e => {
+              if (e.key === "Enter" && started && !finished) {
+                handleInput({target:{value: input + " "}})
+                e.preventDefault();
+              }
+            }}
+            aria-label="Typing test input"
+            tabIndex={0}
+            aria-describedby="typing-tips"
+          />
+          <audio ref={errorAudioRef} src={errorBeep} preload="auto" tabIndex={-1}></audio>
+          <div style={indicatorStyles}>
+            <span><span style={metricLabel}>WPM</span>
+              <span className="animated-value" aria-live="polite">{wpm}</span>
+            </span>
+            <span><span style={metricLabel}>Accuracy</span>
+              <span className="animated-value" aria-live="polite">{accuracy}%</span>
+            </span>
+            <span><span style={metricLabel}>Words</span>
+              <span className="animated-value" aria-live="polite">{typedWords.length}/{wordList.length}</span>
+            </span>
+          </div>
         </div>
         <button
           className="reset-btn"
@@ -733,14 +826,20 @@ function App() {
         </button>
         <div style={{
           display:'block', marginTop:10, color:'#abb8b8',
-          fontWeight:400, fontSize:13, opacity:0.8
-        }}>Type each word and press space. Incorrect letters turn <span style={{color:COLORS.error}}>red</span>.</div>
+          fontWeight:400, fontSize:14, opacity:0.92
+        }} id="typing-tips">
+          Type each word and press space. Incorrect letters turn
+          <span style={{color:COLORS.error,fontWeight:600,padding:'0 2px',borderRadius:'4px',background:'#f9626214'}}>red</span>.
+        </div>
         {/* --- Leaderboard Card --- */}
-        <div style={{
-          margin:'25px auto 3px auto',width:'100%',maxWidth:510,background:'#f7fafd',
-          border:'1px solid #eef6fc',borderRadius:15,boxShadow:'0 2px 18px 0 rgba(113,222,244,0.07)',
-          padding:'18px 10px 15px 10px'
-        }}>
+        <div
+          aria-label="Global leaderboard"
+          style={{
+            margin:'29px auto 3px auto',width:'100%',maxWidth:510,background:'#f7fafd',
+            border:'1px solid #eef6fc',borderRadius:19,boxShadow:'0 4px 16px 0 rgba(113,222,244,0.08)',
+            padding:'18px 10px 15px 10px',
+            animation: 'fadein 0.38s cubic-bezier(.8,.08,.6,1)'
+          }}>
           <div style={{fontWeight:700,marginBottom:8, fontSize:18, color: COLORS.primary}}>🌎 Global Leaderboard</div>
           {leaderboardLoading ? <span>Loading...</span> : leaderboard.length === 0
             ? <span style={{color:"#bbb"}}>No scores yet.</span>
@@ -772,13 +871,62 @@ function App() {
           }
         </div>
       </main>
-      <footer style={{
-        textAlign:'center', color:'#b0b0b0', fontSize:13,marginTop:18
-      }}>
+      <footer
+        aria-label="App footer"
+        style={{
+          textAlign:'center', color:'#b0b0b0', fontSize:13,marginTop:18,
+          animation: 'fadein 0.9s cubic-bezier(.5,0,.4,1)'
+        }}>
         Typing Speed Tester &middot; <a href="https://github.com/" style={{color:COLORS.primary,textDecoration:'none'}}>GitHub</a>
       </footer>
       {/* --- Summary Dialog --- */}
       {showSummary && <SummaryDialog />}
+      {/* --- Animations CSS (injected for visual feedback) --- */}
+      <style>{`
+        @keyframes flashError {
+          0%   { background: rgba(249,98,98,0.19);}
+          99%  { background: rgba(249,98,98,0.1);}
+          100% { background: inherit;}
+        }
+        .words-row.error-flash {
+          animation: pulseShake 0.18s;
+          background: linear-gradient(90deg,#fff 80%,#f9626214 100%);
+        }
+        @keyframes pulseShake {
+          0% { transform: translateX(0px);}
+          16% { transform: translateX(-6px);}
+          34% { transform: translateX(7px);}
+          55% { transform: translateX(-4px);}
+          75% { transform: translateX(4px);}
+          100% { transform: translateX(0px);}
+        }
+        .activeWordAni {
+          animation: bounceIn 0.41s cubic-bezier(.65,1.46,.58,1);
+        }
+        @keyframes bounceIn {
+          0% {transform: scale(0.92) translateY(13px); opacity:0;}
+          40%{transform: scale(1.07) translateY(-4px);}
+          67%{transform: scale(0.96) translateY(1px);}
+          87%{transform: scale(1.01);}
+          100%{transform: scale(1.0) translateY(0); opacity:1;}
+        }
+        .reset-btn, .primary-btn {
+          transition: all 0.16s cubic-bezier(.75,.04,.42,1.25);
+        }
+        .reset-btn:hover, .primary-btn:hover {
+          transform: translateY(-2.5px) scale(1.05) rotateZ(-1deg);
+          filter: brightness(1.12);
+        }
+        .animated-value {
+          animation: popscale 0.24s cubic-bezier(.6,2,.42,.95);
+        }
+        @keyframes popscale {
+          0% {transform:scale(1.29);}
+          65%{transform:scale(0.97);}
+          92%{transform:scale(1.04);}
+          100%{transform:scale(1);}
+        }
+      `}</style>
     </div>
   );
 }
